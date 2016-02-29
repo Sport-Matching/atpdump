@@ -4,6 +4,27 @@ import re
 import datetime
 from lxml import html
 import requests
+import psycopg2
+
+
+def connect_sql():
+    conn_string = "host='192.168.99.100' port='9999' dbname='music' user='postgres' password='postgres'"
+    try:
+        return psycopg2.connect(conn_string)
+    except ValueError:
+        print("Connection impossible to the Database")
+
+
+def insert(conn, name, style, channel_name, channel_url, verified):
+    cur = conn.cursor()
+    try:
+        cur.execute("insert into musics (name, style, channel_name, channel_url, verified) VALUES (%s, %s, %s, %s, %s);",
+                (name, style, channel_name, channel_url, verified))
+    except Exception:
+        print("bad " + name)
+    cur.close()
+    conn.commit()
+
 session = requests.session()
 
 
