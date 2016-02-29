@@ -56,4 +56,10 @@ for playerTreeElement in allPlayersTreeElements:
     m = re.search("\(([0-9]+)cm\)", length)
     length = int(m.group(1))
 
-    print(birthDate, country, weight, length)
+    e = playerTree.xpath("/html/body/div[@id='mainLayoutWrapper']/div[@id='backbonePlaceholder']"
+                         "/div[@id='mainContainer']/div[@id='mainContent']/div[@id='playerProfileHero']"
+                         "/div[@class='player-profile-hero-overflow']/div[@class='player-profile-hero-dash']"
+                         "/div[@class='inner-wrap']/div[@class='player-profile-hero-name']")
+    name = e[0][0].text + " " + e[0][1].text
+
+    print(birthDate, country, weight, length, name)
