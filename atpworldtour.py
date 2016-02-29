@@ -115,6 +115,6 @@ for playerTreeElement in allPlayersTreeElements:
                          "/div[@class='inner-wrap']/div[@class='player-profile-hero-name']")
     i += 1
     if len(e) > 0 and len(e[0]) > 1:
-        name = e[0][0].text + " " + e[0][1].text
+        name = e[0][0].text.strip() + " " + e[0][1].text.strip()
         print(i, birthDate, country, weight, size, name)
         insert(dbInstance, "players", name, birthDate, '0', country, weight, size)
