@@ -1,5 +1,7 @@
 #! /usr/bin/env python3
 
+# for i in {0..30}; do ./atpworldtour.py $((i*100)) $((i*100+99))& done
+
 import sys
 import re
 import datetime
