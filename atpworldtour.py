@@ -28,7 +28,7 @@ def connect_sql():
     try:
         return psycopg2.connect(conn_string)
     except ValueError:
-        print("Connection impossible to the Database")
+        print("Unable to connect to the database")
 
 
 def insert(conn, table, name, birthDate, sex, country, weight, size):
