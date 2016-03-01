@@ -50,6 +50,14 @@ def insert_tournament(conn, tournament):
     return entity_id
 
 
+def get_player_by_url(url):
+    for player_name in players:
+        player = players[player_name]
+        if player['overviewUrl'] == url or player['activityUrl'] == url:
+            return player
+    return None
+
+
 dbInstance = connect_sql()
 
 session = requests.session()
@@ -148,41 +156,47 @@ for player_name in players:
     player = players[player_name]
     playerActivityTree = player["activityTree"]
 
-    e = playerActivityTree.xpath("/html/body/div[@id='mainLayoutWrapper']/div[@id='backbonePlaceholder']"
-                                 "/div[@id='mainContainer']/div[@id='mainContent']/div[@id='currentTabContent']"
-                                 "/div[3]/div[@class='activity-tournament-table'][1]"
-                                 "/table[@class='tourney-results-wrapper']/tbody/tr[@class='tourney-result with-icons']"
-                                 "/td[@class='title-content']/a[@class='tourney-title']")
-    tournament_name = e[0].text.strip()
+    tournamentsTree = playerActivityTree.xpath("/html/body/div[@id='mainLayoutWrapper']/div[@id='backbonePlaceholder']"
+                                               "/div[@id='mainContainer']/div[@id='mainContent']"
+                                               "/div[@id='currentTabContent']/div[3]"
+                                               "/div[@class='activity-tournament-table']")
+    for tournamentTree in tournamentsTree:
+        e = tournamentTree.xpath("./table[@class='tourney-results-wrapper']/tbody"
+                                 "/tr[@class='tourney-result with-icons']/td[@class='title-content']"
+                                 "/*[@class='tourney-title']")
+        tournament_name = e[0].text.strip()
 
-    e = playerActivityTree.xpath("/html/body/div[@id='mainLayoutWrapper']/div[@id='backbonePlaceholder']"
-                                 "/div[@id='mainContainer']/div[@id='mainContent']/div[@id='currentTabContent']"
-                                 "/div[3]/div[@class='activity-tournament-table'][1]"
-                                 "/table[@class='tourney-results-wrapper']/tbody/tr[@class='tourney-result with-icons']"
-                                 "/td[@class='tourney-details-table-wrapper']/table/tbody/tr"
-                                 "/td[@class='tourney-details'][2]/div[@class='info-area']/div[@class='item-details']")
-    tournament_ground_type = e[0].text.strip() + " " + e[0][0].text.strip()
-    if tournament_ground_type not in tournament_ground_types:
-        tournament_ground_types.append(tournament_ground_type)
+        e = tournamentTree.xpath("./table[@class='tourney-results-wrapper']/tbody"
+                                 "/tr[@class='tourney-result with-icons']/td[@class='tourney-details-table-wrapper']"
+                                 "/table/tbody/tr/td[@class='tourney-details'][2]/div[@class='info-area']"
+                                 "/div[@class='item-details']")
+        tournament_ground_type = e[0].text.strip() + " " + e[0][0].text.strip()
+        if tournament_ground_type not in tournament_ground_types:
+            tournament_ground_types.append(tournament_ground_type)
 
-    e = playerActivityTree.xpath("/html/body/div[@id='mainLayoutWrapper']/div[@id='backbonePlaceholder']"
-                                 "/div[@id='mainContainer']/div[@id='mainContent']/div[@id='currentTabContent']"
-                                 "/div[3]/div[@class='activity-tournament-table'][1]"
-                                 "/table[@class='tourney-results-wrapper']/tbody/tr[@class='tourney-result with-icons']"
-                                 "/td[@class='title-content']/span[@class='tourney-dates']")
-    tournamentDateString = e[0].text.strip().split(" - ")[0]
-    tournamentDate = datetime.datetime.strptime(tournamentDateString, "%Y.%m.%d")
-    tournament_name_full = tournament_name + " " + str(tournamentDate.year)
+        e = tournamentTree.xpath("./table[@class='tourney-results-wrapper']/tbody"
+                                 "/tr[@class='tourney-result with-icons']/td[@class='title-content']"
+                                 "/span[@class='tourney-dates']")
+        tournamentDateString = e[0].text.strip().split(" - ")[0]
+        tournamentDate = datetime.datetime.strptime(tournamentDateString, "%Y.%m.%d")
+        tournament_name_full = tournament_name + " " + str(tournamentDate.year)
+        if tournament_name_full not in tournaments:
+            tournaments[tournament_name_full] = {
+                'id': None,
+                'name': tournament_name,
+                'year': tournamentDate.year,
+                'ground_type': tournament_ground_types.index(tournament_ground_type)
+            }
+            tournament_id = insert_tournament(dbInstance, tournaments[tournament_name_full])
+            tournaments[tournament_name_full]['id'] = tournament_id
 
-    if tournament_name_full not in tournaments:
-        tournaments[tournament_name_full] = {
-            'id': None,
-            'name': tournament_name,
-            'year': tournamentDate.year,
-            'ground_type': tournament_ground_types.index(tournament_ground_type)
-        }
-        tournament_id = insert_tournament(dbInstance, tournaments[tournament_name_full])
-        tournaments[tournament_name_full]['id'] = tournament_id
+        matchesTree = tournamentTree.xpath("./table[@class='mega-table']/tbody/tr")
+        for matchTree in matchesTree:
+            opponentTree = matchTree.xpath("./td[3]/div[1]/a")
+            if len(opponentTree) == 0:
+                continue
+            opponentUrl = baseUrl + opponentTree[0].attrib['href']
+            opponent = get_player_by_url(opponentUrl)
 
 print(players)
 print(tournaments)
