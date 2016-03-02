@@ -76,6 +76,7 @@ allPlayersTreeElements = allPlayersTree.xpath("/html/body/div[@id='mainLayoutWra
 players = {}
 tournaments = {}
 tournament_ground_types = []
+matches = []
 
 for playerTreeElement in allPlayersTreeElements:
     nameElement = playerTreeElement[3][0]
@@ -189,6 +190,8 @@ for player_name in players:
             }
             tournament_id = insert_tournament(dbInstance, tournaments[tournament_name_full])
             tournaments[tournament_name_full]['id'] = tournament_id
+        else:
+            tournament_id = tournaments[tournament_name_full]['id']
 
         matchesTree = tournamentTree.xpath("./table[@class='mega-table']/tbody/tr")
         for matchTree in matchesTree:
@@ -197,6 +200,14 @@ for player_name in players:
                 continue
             opponentUrl = baseUrl + opponentTree[0].attrib['href']
             opponent = get_player_by_url(opponentUrl)
+            match = {
+                'id': None,
+                'player1_id': player['id'],
+                'player2_id': opponent['id'],
+                'date': None,
+                'tournament_id': tournament_id
+            }
+            matches.append(match)
 
 print(players)
 print(tournaments)
