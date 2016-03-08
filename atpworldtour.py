@@ -20,13 +20,24 @@ if len(sys.argv) == 3:
     end = int(sys.argv[2])
 else:
     begin = 0
-    end = 2
+    end = 10000
 
 
 def connect_sql():
     conn_string = "host='" + host + "' port='" + str(port) + "' dbname='" + db + \
                   "' user='" + user + "' password='" + password + "'"
     return psycopg2.connect(conn_string)
+
+
+def clear_db(conn):
+    cur = conn.cursor()
+    cur.execute("DELETE FROM sets")
+    cur.execute("DELETE FROM matches")
+    cur.execute("DELETE FROM tournaments")
+    cur.execute("DELETE FROM rankings")
+    cur.execute("DELETE FROM players")
+    cur.close()
+    conn.commit()
 
 
 def insert_player(conn, player):
@@ -50,6 +61,29 @@ def insert_tournament(conn, tournament):
     return entity_id
 
 
+def insert_set(conn, set):
+    cur = conn.cursor()
+    cur.execute("insert into sets (player1_score, player2_score, player1_tie_break, player2_tie_break)"
+                "VALUES (%s, %s, %s, %s) RETURNING id;",
+                (set['player1_score'], set['player1_score'], set['player1_tie_break'], set['player2_tie_break']))
+    entity_id = cur.fetchone()[0]
+    cur.close()
+    conn.commit()
+    return entity_id
+
+
+def insert_match(conn, match):
+    cur = conn.cursor()
+    cur.execute("insert into matches (player1_id, player2_id, set1_id, set2_id, set3_id, set4_id, set5_id, date,"
+                "tournament_id) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id;",
+                (match['player1_id'], match['player2_id'], match['set1_id'], match['set2_id'], match['set3_id'],
+                 match['set4_id'], match['set5_id'], match['date'], match['tournament_id']))
+    entity_id = cur.fetchone()[0]
+    cur.close()
+    conn.commit()
+    return entity_id
+
+
 def get_player_by_url(url):
     for player_name in players:
         player = players[player_name]
@@ -59,6 +93,8 @@ def get_player_by_url(url):
 
 
 dbInstance = connect_sql()
+
+clear_db(dbInstance)
 
 session = requests.session()
 
@@ -200,13 +236,47 @@ for player_name in players:
                 continue
             opponentUrl = baseUrl + opponentTree[0].attrib['href']
             opponent = get_player_by_url(opponentUrl)
+
+            setTree = matchTree.xpath("./td[5]/a")
+            if len(setTree) == 0:
+                continue
+
+            sets = []
+            setsStr = setTree[0].text.strip().split(" ")
+            for setStr in setsStr:
+                if len(setStr) == 2:
+                    set = {
+                        'id': None,
+                        'player1_score': int(setStr[0]),
+                        'player2_score': int(setStr[1]),
+                        'player1_tie_break': 0,
+                        'player2_tie_break': 0
+                    }
+                else:
+                    set = {
+                        'id': None,
+                        'player1_score': -1,
+                        'player2_score': -1,
+                        'player1_tie_break': 0,
+                        'player2_tie_break': 0
+                    }
+                set['id'] = insert_set(dbInstance, set)
+                sets.append(set)
+
             match = {
                 'id': None,
                 'player1_id': player['id'],
                 'player2_id': opponent['id'],
-                'date': None,
-                'tournament_id': tournament_id
+                'set1_id': sets[0]['id'],
+                'set2_id': sets[1]['id'] if len(sets) > 1 else None,
+                'set3_id': sets[2]['id'] if len(sets) > 2 else None,
+                'set4_id': sets[3]['id'] if len(sets) > 3 else None,
+                'set5_id': sets[4]['id'] if len(sets) > 4 else None,
+                'date': tournamentDate,
+                'tournament_id': tournament_id,
+                'sets': sets
             }
+            match['id'] = insert_match(dbInstance, match)
             matches.append(match)
 
 print(players)
