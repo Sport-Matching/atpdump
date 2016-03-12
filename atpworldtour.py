@@ -20,7 +20,7 @@ if len(sys.argv) == 3:
     end = int(sys.argv[2])
 else:
     begin = 0
-    end = 10000
+    end = 2
 
 
 def connect_sql():
@@ -42,9 +42,11 @@ def clear_db(conn):
 
 def insert_player(conn, player):
     cur = conn.cursor()
-    cur.execute("insert into players (name, birthdate, sex, country, weight, size) "
-                "VALUES (%s, %s, %s, %s, %s, %s) RETURNING id;", (player['name'], player['birthDate'], player['sex'],
-                                                                  player['country'], player['weight'], player['size']))
+    cur.execute("insert into players (name, birthdate, sex, country, weight, size, picture_url) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id;", (player['name'], player['birthDate'],
+                                                                      player['sex'], player['country'],
+                                                                      player['weight'], player['size'],
+                                                                      player['pictureUrl']))
     entity_id = cur.fetchone()[0]
     cur.close()
     conn.commit()
@@ -152,6 +154,14 @@ for playerTreeElement in allPlayersTreeElements:
 
     e = playerActivityTree.xpath("/html/body/div[@id='mainLayoutWrapper']/div[@id='backbonePlaceholder']"
                                  "/div[@id='mainContainer']/div[@id='mainContent']/div[@id='playerProfileHero']"
+                                 "/div[@class='player-profile-hero-image']/img")
+    if len(e) > 0:
+        playerPictureUrl = baseUrl + e[0].attrib['src']
+    else:
+        playerPictureUrl = None
+
+    e = playerActivityTree.xpath("/html/body/div[@id='mainLayoutWrapper']/div[@id='backbonePlaceholder']"
+                                 "/div[@id='mainContainer']/div[@id='mainContent']/div[@id='playerProfileHero']"
                                  "/div[@class='player-profile-hero-overflow']/div[@class='player-profile-hero-table']"
                                  "/div[@class='inner-wrap']/table/tr[1]/td[3]/div[@class='wrap']"
                                  "/div[@class='table-big-value']/span[@class='table-weight-kg-wrapper']")
@@ -179,6 +189,7 @@ for playerTreeElement in allPlayersTreeElements:
         'overviewUrl': playerOverviewUrl,
         'activityUrl': playerActivityUrl,
         'activityTree': playerActivityTree,
+        'pictureUrl': playerPictureUrl,
         'name': name,
         'birthDate': birthDate,
         'sex': '0',
@@ -263,10 +274,13 @@ for player_name in players:
                 set['id'] = insert_set(dbInstance, set)
                 sets.append(set)
 
+            if opponent is None:
+                print("Unknown player: ", opponentUrl)
+
             match = {
                 'id': None,
                 'player1_id': player['id'],
-                'player2_id': opponent['id'],
+                'player2_id': opponent['id'] if opponent is not None else None,
                 'set1_id': sets[0]['id'],
                 'set2_id': sets[1]['id'] if len(sets) > 1 else None,
                 'set3_id': sets[2]['id'] if len(sets) > 2 else None,
