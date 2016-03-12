@@ -11,8 +11,7 @@ threads=100
 
 preLaunch()
 {
-    rm -f out/players-*.json
-    ./atpworldtour.py clearDb 0 0
+    ./atpworldtour.py clearMatches 0 0
 }
 
 launchInstance()
@@ -22,7 +21,7 @@ launchInstance()
     local instanceCount=${3}
     local threadNumber=${4}
     local instanceNumber=${5}
-    ./atpworldtour.py downloadPlayers ${instanceBegin} ${instanceEnd}
+    ./atpworldtour.py downloadMatches ${instanceBegin} ${instanceEnd}
     #sleep $((${RANDOM} % 10))
 }
 

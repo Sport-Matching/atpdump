@@ -8,7 +8,7 @@ from lxml import html
 import requests
 import psycopg2
 
-session = requests.session()
+baseUrl = 'http://www.atpworldtour.com'
 
 
 def connect_sql():
@@ -26,13 +26,41 @@ dbInstance = connect_sql()
 
 def clear_db(conn):
     cur = conn.cursor()
-    cur.execute("DELETE FROM sets")
-    cur.execute("DELETE FROM matches")
     cur.execute("DELETE FROM tournaments")
+    cur.execute("DELETE FROM matches")
+    cur.execute("DELETE FROM sets")
     cur.execute("DELETE FROM rankings")
     cur.execute("DELETE FROM players")
     cur.close()
     conn.commit()
+
+
+def clear_matches(conn):
+    cur = conn.cursor()
+    cur.execute("DELETE FROM sets")
+    cur.execute("DELETE FROM matches")
+    cur.execute("DELETE FROM tournaments")
+    cur.close()
+    conn.commit()
+
+
+def may_insert_ground(conn, ground):
+    cur = conn.cursor()
+    cur.execute("SELECT ground_id FROM sp_may_insert_ground('42');")
+    entity_id = cur.fetchone()[0]
+    cur.close()
+    conn.commit()
+    return entity_id
+
+
+def may_insert_tournament(conn, tournament):
+    cur = conn.cursor()
+    cur.execute("SELECT tournament_id FROM sp_may_insert_tournament(%s, %s, %s);",
+                (tournament['name'], tournament['ground_type'], tournament['year']))
+    entity_id = cur.fetchone()[0]
+    cur.close()
+    conn.commit()
+    return entity_id
 
 
 def insert_player(conn, player):
@@ -42,16 +70,6 @@ def insert_player(conn, player):
                                                                       player['sex'], player['country'],
                                                                       player['weight'], player['size'],
                                                                       player['pictureUrl']))
-    entity_id = cur.fetchone()[0]
-    cur.close()
-    conn.commit()
-    return entity_id
-
-
-def insert_tournament(conn, tournament):
-    cur = conn.cursor()
-    cur.execute("insert into tournaments (name, ground_type, year) VALUES (%s, %s, %s) RETURNING id;",
-                (tournament['name'], tournament['ground_type'], tournament['year']))
     entity_id = cur.fetchone()[0]
     cur.close()
     conn.commit()
@@ -83,6 +101,8 @@ def insert_match(conn, match):
 
 
 def get_player_by_url(url, players):
+    print(url)
+    exit(0)
     for player_name in players:
         player = players[player_name]
         if player['overviewUrl'] == url or player['activityUrl'] == url:
@@ -90,10 +110,106 @@ def get_player_by_url(url, players):
     return None
 
 
-def download_players():
+def download_player(player_activity_url, player_overview_url, session):
+    player_activity_html = session.get(player_activity_url)
+    player_activity_tree = html.fromstring(player_activity_html.text)
 
+    e = player_activity_tree.xpath("/html/body/div[@id='mainLayoutWrapper']/div[@id='backbonePlaceholder']"
+                                   "/div[@id='mainContainer']/div[@id='mainContent']/div[@id='playerProfileHero']"
+                                   "/div[@class='player-profile-hero-overflow']"
+                                   "/div[@class='player-profile-hero-dash']/div[@class='inner-wrap']"
+                                   "/div[@class='player-profile-hero-name']")
+    if len(e) == 0 or len(e[0]) <= 1:
+        return None
+    name = e[0][0].text.strip() + " " + e[0][1].text.strip()
+
+    e = player_activity_tree.xpath("/html/body/div[@id='mainLayoutWrapper']/div[@id='backbonePlaceholder']"
+                                   "/div[@id='mainContainer']/div[@id='mainContent']/div[@id='playerProfileHero']"
+                                   "/div[@class='player-profile-hero-overflow']"
+                                   "/div[@class='player-profile-hero-table']/div[@class='inner-wrap']/table/tr[1]"
+                                   "/td[1]/div[@class='wrap']/div[@class='table-big-value']"
+                                   "/span[@class='table-birthday-wrapper']/span")
+    if len(e) > 0:
+        birth_date_string = e[0].text.strip()
+    else:
+        birth_date_string = "(1970.01.01)"
+    birth_date = datetime.datetime.strptime(birth_date_string, "(%Y.%m.%d)")
+
+    e = player_activity_tree.xpath("/html/body/div[@id='mainLayoutWrapper']/div[@id='backbonePlaceholder']"
+                                   "/div[@id='mainContainer']/div[@id='mainContent']/div[@id='playerProfileHero']"
+                                   "/div[@class='player-profile-hero-overflow']"
+                                   "/div[@class='player-profile-hero-dash']/div[@class='inner-wrap']"
+                                   "/div[@class='player-profile-hero-ranking']/div[@class='player-flag']"
+                                   "/div[@class='player-flag-code']")
+    if len(e) > 0:
+        country = e[0].text.strip()
+    else:
+        country = ""
+
+    e = player_activity_tree.xpath("/html/body/div[@id='mainLayoutWrapper']/div[@id='backbonePlaceholder']"
+                                   "/div[@id='mainContainer']/div[@id='mainContent']/div[@id='playerProfileHero']"
+                                   "/div[@class='player-profile-hero-image']/img")
+    if len(e) > 0:
+        player_picture_url = baseUrl + e[0].attrib['src']
+    else:
+        player_picture_url = None
+
+    e = player_activity_tree.xpath("/html/body/div[@id='mainLayoutWrapper']/div[@id='backbonePlaceholder']"
+                                   "/div[@id='mainContainer']/div[@id='mainContent']/div[@id='playerProfileHero']"
+                                   "/div[@class='player-profile-hero-overflow']"
+                                   "/div[@class='player-profile-hero-table']/div[@class='inner-wrap']/table/tr[1]"
+                                   "/td[3]/div[@class='wrap']/div[@class='table-big-value']"
+                                   "/span[@class='table-weight-kg-wrapper']")
+    if len(e) > 0:
+        weight = e[0].text.strip()
+        m = re.search("\(([0-9]+)kg\)", weight)
+        if m is not None:
+            weight = int(m.group(1)) * 1000
+        else:
+            weight = 0
+    else:
+        weight = 0
+
+    e = player_activity_tree.xpath("/html/body/div[@id='mainLayoutWrapper']/div[@id='backbonePlaceholder']"
+                                   "/div[@id='mainContainer']/div[@id='mainContent']/div[@id='playerProfileHero']"
+                                   "/div[@class='player-profile-hero-overflow']"
+                                   "/div[@class='player-profile-hero-table']/div[@class='inner-wrap']/table/tr[1]"
+                                   "/td[4]/div[@class='wrap']/div[@class='table-big-value']"
+                                   "/span[@class='table-height-cm-wrapper']")
+    if len(e) > 0:
+        size = e[0].text.strip()
+        m = re.search("\(([0-9]+)cm\)", size)
+        if m is not None:
+            size = int(m.group(1))
+        else:
+            size = 0
+    else:
+        size = 0
+
+    player = {
+        'id': None,
+        'overviewUrl': player_overview_url,
+        'activityUrl': player_activity_url,
+        'pictureUrl': player_picture_url,
+        'name': name,
+        'birthDate': str(birth_date),
+        'sex': '0',
+        'country': country,
+        'weight': weight,
+        'size': size
+    }
+    player['id'] = insert_player(dbInstance, player)
+    return player
+
+
+def download_players(begin, end):
+
+    get_ranking_url = baseUrl + '/en/rankings/singles/?rankDate=2016-2-29&countryCode=all&rankRange=' +\
+                    str(begin) + '-' + str(end)
     players = {}
-    all_players_html = session.get(getRankingUrl)
+
+    session = requests.session()
+    all_players_html = session.get(get_ranking_url)
     all_players_tree = html.fromstring(all_players_html.text)
     all_players_tree_elements = all_players_tree.xpath("/html/body/div[@id='mainLayoutWrapper']"
                                                        "/div[@id='backbonePlaceholder']/div[@id='mainContainer']"
@@ -105,118 +221,33 @@ def download_players():
         name_element = playerTreeElement[3][0]
         player_overview_url = baseUrl + name_element.attrib['href']
         player_activity_url = player_overview_url[:-8] + "player-activity?year=all&matchType=singles"
-        player_activity_html = session.get(player_activity_url)
-        player_activity_tree = html.fromstring(player_activity_html.text)
-
-        e = player_activity_tree.xpath("/html/body/div[@id='mainLayoutWrapper']/div[@id='backbonePlaceholder']"
-                                       "/div[@id='mainContainer']/div[@id='mainContent']/div[@id='playerProfileHero']"
-                                       "/div[@class='player-profile-hero-overflow']"
-                                       "/div[@class='player-profile-hero-dash']/div[@class='inner-wrap']"
-                                       "/div[@class='player-profile-hero-name']")
-        if len(e) == 0 or len(e[0]) <= 1:
-            continue
-        name = e[0][0].text.strip() + " " + e[0][1].text.strip()
-
-        e = player_activity_tree.xpath("/html/body/div[@id='mainLayoutWrapper']/div[@id='backbonePlaceholder']"
-                                       "/div[@id='mainContainer']/div[@id='mainContent']/div[@id='playerProfileHero']"
-                                       "/div[@class='player-profile-hero-overflow']"
-                                       "/div[@class='player-profile-hero-table']/div[@class='inner-wrap']/table/tr[1]"
-                                       "/td[1]/div[@class='wrap']/div[@class='table-big-value']"
-                                       "/span[@class='table-birthday-wrapper']/span")
-        if len(e) > 0:
-            birth_date_string = e[0].text.strip()
-        else:
-            birth_date_string = "(1970.01.01)"
-        birth_date = datetime.datetime.strptime(birth_date_string, "(%Y.%m.%d)")
-
-        e = player_activity_tree.xpath("/html/body/div[@id='mainLayoutWrapper']/div[@id='backbonePlaceholder']"
-                                       "/div[@id='mainContainer']/div[@id='mainContent']/div[@id='playerProfileHero']"
-                                       "/div[@class='player-profile-hero-overflow']"
-                                       "/div[@class='player-profile-hero-dash']/div[@class='inner-wrap']"
-                                       "/div[@class='player-profile-hero-ranking']/div[@class='player-flag']"
-                                       "/div[@class='player-flag-code']")
-        if len(e) > 0:
-            country = e[0].text.strip()
-        else:
-            country = ""
-
-        e = player_activity_tree.xpath("/html/body/div[@id='mainLayoutWrapper']/div[@id='backbonePlaceholder']"
-                                       "/div[@id='mainContainer']/div[@id='mainContent']/div[@id='playerProfileHero']"
-                                       "/div[@class='player-profile-hero-image']/img")
-        if len(e) > 0:
-            player_picture_url = baseUrl + e[0].attrib['src']
-        else:
-            player_picture_url = None
-
-        e = player_activity_tree.xpath("/html/body/div[@id='mainLayoutWrapper']/div[@id='backbonePlaceholder']"
-                                       "/div[@id='mainContainer']/div[@id='mainContent']/div[@id='playerProfileHero']"
-                                       "/div[@class='player-profile-hero-overflow']"
-                                       "/div[@class='player-profile-hero-table']/div[@class='inner-wrap']/table/tr[1]"
-                                       "/td[3]/div[@class='wrap']/div[@class='table-big-value']"
-                                       "/span[@class='table-weight-kg-wrapper']")
-        if len(e) > 0:
-            weight = e[0].text.strip()
-            m = re.search("\(([0-9]+)kg\)", weight)
-            if m is not None:
-                weight = int(m.group(1)) * 1000
-            else:
-                weight = 0
-        else:
-            weight = 0
-
-        e = player_activity_tree.xpath("/html/body/div[@id='mainLayoutWrapper']/div[@id='backbonePlaceholder']"
-                                       "/div[@id='mainContainer']/div[@id='mainContent']/div[@id='playerProfileHero']"
-                                       "/div[@class='player-profile-hero-overflow']"
-                                       "/div[@class='player-profile-hero-table']/div[@class='inner-wrap']/table/tr[1]"
-                                       "/td[4]/div[@class='wrap']/div[@class='table-big-value']"
-                                       "/span[@class='table-height-cm-wrapper']")
-        if len(e) > 0:
-            size = e[0].text.strip()
-            m = re.search("\(([0-9]+)cm\)", size)
-            if m is not None:
-                size = int(m.group(1))
-            else:
-                size = 0
-        else:
-            size = 0
-
-        players[name] = {
-            'id': None,
-            'overviewUrl': player_overview_url,
-            'activityUrl': player_activity_url,
-            # 'activityTree': playerActivityTree,
-            'pictureUrl': player_picture_url,
-            'name': name,
-            'birthDate': str(birth_date),
-            'sex': '0',
-            'country': country,
-            'weight': weight,
-            'size': size
-        }
-        player_id = insert_player(dbInstance, players[name])
-        players[name]['id'] = player_id
-    with open("out/" + str(begin) + "-" + str(end) + ".json", "w+") as f:
+        player = download_player(player_activity_url, player_overview_url, session)
+        if player is not None:
+            players[player['name']] = player
+    with open("out/players-" + str(begin) + "-" + str(end) + ".json", "w+") as f:
         f.write(json.dumps(players))
     exit(0)
 
 
-def download_matches():
+def download_matches(begin, end):
 
     players = {}
     tournaments = {}
-    tournament_ground_types = []
+    tournament_ground_types = {}
     matches = []
-    for filename in glob.glob("out/*-*.json"):
+    session = requests.session()
+    for filename in glob.glob("out/players-*.json"):
         with open(filename, "r") as f:
             data = json.load(f)
             for playerName in data:
                 players[playerName] = data[playerName]
-    print(players, len(players))
-    exit(1)
+    with open("out/players-" + str(begin) + "-" + str(end) + ".json", "r") as f:
+        selected_players = json.load(f)
 
-    for player_name in players:
+    for player_name in selected_players:
         player = players[player_name]
-        player_activity_tree = player["activityTree"]
+        player_activity_html = session.get(player['activityUrl'])
+        player_activity_tree = html.fromstring(player_activity_html.text)
 
         tournaments_tree = player_activity_tree.xpath("/html/body/div[@id='mainLayoutWrapper']"
                                                       "/div[@id='backbonePlaceholder']/div[@id='mainContainer']"
@@ -235,7 +266,14 @@ def download_matches():
                                      "/div[@class='item-details']")
             tournament_ground_type = e[0].text.strip() + " " + e[0][0].text.strip()
             if tournament_ground_type not in tournament_ground_types:
-                tournament_ground_types.append(tournament_ground_type)
+                tournament_ground_types[tournament_ground_type] = {
+                    'id': None,
+                    'name': tournament_ground_type
+                }
+                tournament_ground_id = may_insert_ground(dbInstance, tournament_ground_types[tournament_ground_type])
+                tournament_ground_types[tournament_ground_type]['id'] = tournament_ground_id
+            else:
+                tournament_ground_id = tournament_ground_types[tournament_ground_type]['id']
 
             e = tournamentTree.xpath("./table[@class='tourney-results-wrapper']/tbody"
                                      "/tr[@class='tourney-result with-icons']/td[@class='title-content']"
@@ -248,9 +286,9 @@ def download_matches():
                     'id': None,
                     'name': tournament_name,
                     'year': tournament_date.year,
-                    'ground_type': tournament_ground_types.index(tournament_ground_type)
+                    'ground_type': tournament_ground_id
                 }
-                tournament_id = insert_tournament(dbInstance, tournaments[tournament_name_full])
+                tournament_id = may_insert_tournament(dbInstance, tournaments[tournament_name_full])
                 tournaments[tournament_name_full]['id'] = tournament_id
             else:
                 tournament_id = tournaments[tournament_name_full]['id']
@@ -308,33 +346,33 @@ def download_matches():
                 match['id'] = insert_match(dbInstance, match)
                 matches.append(match)
 
-    print(players)
-    print(tournaments)
-    print(tournament_ground_types)
 
+def main():
 
-if len(sys.argv) != 4:
-    print('Usage: atpdump [clearDb|downloadPlayers|downloadMatches] begin end')
-    exit(64)
+    if len(sys.argv) != 4:
+        print('Usage: %s [clearDb|downloadPlayers|downloadMatches] begin end' % (sys.argv[0]))
+        exit(64)
 
-operation = sys.argv[1]
-begin = int(sys.argv[2])
-end = int(sys.argv[3])
+    operation = sys.argv[1]
+    begin = int(sys.argv[2])
+    end = int(sys.argv[3])
 
-baseUrl = 'http://www.atpworldtour.com'
-getRankingUrl = baseUrl + '/en/rankings/singles/?rankDate=2016-2-29&countryCode=all&rankRange=' + \
-                str(begin) + '-' + str(end)
+    if operation == "clearDb":
+        clear_db(dbInstance)
+        exit(0)
 
-if operation == "clearDb":
-    clear_db(dbInstance)
-    exit(0)
+    elif operation == "downloadPlayers":
+        download_players(begin, end)
+        exit(0)
 
-elif operation == "downloadPlayers":
-    download_players()
-    exit(0)
+    elif operation == "clearMatches":
+        clear_matches(dbInstance)
+        exit(0)
 
-elif operation == "downloadMatches":
-    download_matches()
-    exit(0)
-else:
-    exit(64)
+    elif operation == "downloadMatches":
+        download_matches(begin, end)
+        exit(0)
+    else:
+        exit(64)
+
+main()
