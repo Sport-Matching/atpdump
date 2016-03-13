@@ -47,7 +47,7 @@ def clear_matches(conn):
 
 def may_insert_ground(conn, ground):
     cur = conn.cursor()
-    cur.execute("SELECT ground_id FROM sp_may_insert_ground('42');")
+    cur.execute("SELECT ground_id FROM sp_may_insert_ground('" + ground["name"] + "');")
     entity_id = cur.fetchone()[0]
     cur.close()
     conn.commit()
@@ -99,34 +99,42 @@ def insert_match(conn, match):
     return entity_id
 
 
-def get_player_by_url(date, player_overview_url, players, session):
+def get_player_root_url(player_url):
+    m = re.search(re.escape(baseUrl) + "(/[^/]+){4}", player_url)
+    if m is not None:
+        return m.group(0) + "/"
+    return player_url
+
+
+def get_player_by_url(date, player_url, players, session):
+    player_url = get_player_root_url(player_url)
     for player_name in players:
         player = players[player_name]
-        if player['overviewUrl'] == player_overview_url:
+        if player['rootUrl'] == player_url:
             return player
-    player = download_player(date, player_overview_url, session)
+    player = download_player(date, player_url, session)
     if player is not None:
         players[player["name"]] = player
         return player
     return None
 
 
-def download_player(date, player_overview_url, session):
-    player_activity_url = player_overview_url[:-8] + "player-activity?year=%s&matchType=singles" % (str(date.year))
-    player_activity_html = session.get(player_activity_url)
-    player_activity_tree = html.fromstring(player_activity_html.text)
+def download_player(date, player_root_url, session):
+    player_overview_url = player_root_url + "overview"
+    player_overview_html = session.get(player_overview_url)
+    player_overview_tree = html.fromstring(player_overview_html.text)
 
-    e = player_activity_tree.xpath("/html/body/div[@id='mainLayoutWrapper']/div[@id='backbonePlaceholder']"
+    e = player_overview_tree.xpath("/html/body/div[@id='mainLayoutWrapper']/div[@id='backbonePlaceholder']"
                                    "/div[@id='mainContainer']/div[@id='mainContent']/div[@id='playerProfileHero']"
                                    "/div[@class='player-profile-hero-overflow']"
                                    "/div[@class='player-profile-hero-dash']/div[@class='inner-wrap']"
                                    "/div[@class='player-profile-hero-name']")
     if len(e) == 0 or len(e[0]) <= 1:
-        print("Bad player page: %s %s" % (player_activity_url, player_overview_url))
+        print("Bad player page: %s %s" % (player_overview_url, player_root_url))
         return None
     name = e[0][0].text.strip() + " " + e[0][1].text.strip()
 
-    e = player_activity_tree.xpath("/html/body/div[@id='mainLayoutWrapper']/div[@id='backbonePlaceholder']"
+    e = player_overview_tree.xpath("/html/body/div[@id='mainLayoutWrapper']/div[@id='backbonePlaceholder']"
                                    "/div[@id='mainContainer']/div[@id='mainContent']/div[@id='playerProfileHero']"
                                    "/div[@class='player-profile-hero-overflow']"
                                    "/div[@class='player-profile-hero-table']/div[@class='inner-wrap']/table/tr[1]"
@@ -138,7 +146,7 @@ def download_player(date, player_overview_url, session):
         birth_date_string = "(1970.01.01)"
     birth_date = datetime.datetime.strptime(birth_date_string, "(%Y.%m.%d)")
 
-    e = player_activity_tree.xpath("/html/body/div[@id='mainLayoutWrapper']/div[@id='backbonePlaceholder']"
+    e = player_overview_tree.xpath("/html/body/div[@id='mainLayoutWrapper']/div[@id='backbonePlaceholder']"
                                    "/div[@id='mainContainer']/div[@id='mainContent']/div[@id='playerProfileHero']"
                                    "/div[@class='player-profile-hero-overflow']"
                                    "/div[@class='player-profile-hero-dash']/div[@class='inner-wrap']"
@@ -149,7 +157,7 @@ def download_player(date, player_overview_url, session):
     else:
         country = ""
 
-    e = player_activity_tree.xpath("/html/body/div[@id='mainLayoutWrapper']/div[@id='backbonePlaceholder']"
+    e = player_overview_tree.xpath("/html/body/div[@id='mainLayoutWrapper']/div[@id='backbonePlaceholder']"
                                    "/div[@id='mainContainer']/div[@id='mainContent']/div[@id='playerProfileHero']"
                                    "/div[@class='player-profile-hero-image']/img")
     if len(e) > 0:
@@ -157,7 +165,7 @@ def download_player(date, player_overview_url, session):
     else:
         player_picture_url = None
 
-    e = player_activity_tree.xpath("/html/body/div[@id='mainLayoutWrapper']/div[@id='backbonePlaceholder']"
+    e = player_overview_tree.xpath("/html/body/div[@id='mainLayoutWrapper']/div[@id='backbonePlaceholder']"
                                    "/div[@id='mainContainer']/div[@id='mainContent']/div[@id='playerProfileHero']"
                                    "/div[@class='player-profile-hero-overflow']"
                                    "/div[@class='player-profile-hero-table']/div[@class='inner-wrap']/table/tr[1]"
@@ -173,7 +181,7 @@ def download_player(date, player_overview_url, session):
     else:
         weight = 0
 
-    e = player_activity_tree.xpath("/html/body/div[@id='mainLayoutWrapper']/div[@id='backbonePlaceholder']"
+    e = player_overview_tree.xpath("/html/body/div[@id='mainLayoutWrapper']/div[@id='backbonePlaceholder']"
                                    "/div[@id='mainContainer']/div[@id='mainContent']/div[@id='playerProfileHero']"
                                    "/div[@class='player-profile-hero-overflow']"
                                    "/div[@class='player-profile-hero-table']/div[@class='inner-wrap']/table/tr[1]"
@@ -191,8 +199,7 @@ def download_player(date, player_overview_url, session):
 
     player = {
         'id': None,
-        'overviewUrl': player_overview_url,
-        'activityUrl': player_activity_url,
+        'rootUrl': player_root_url,
         'pictureUrl': player_picture_url,
         'name': name,
         'birthDate': str(birth_date),
@@ -252,7 +259,8 @@ def download_matches(date, begin, end):
 
     for player_name in selected_players:
         player = players[player_name]
-        player_activity_html = session.get(player['activityUrl'])
+        player_activity_html = session.get(player['rootUrl'] + "player-activity?year=%s&matchType=singles" %
+                                           (str(date.year)))
         player_activity_tree = html.fromstring(player_activity_html.text)
 
         tournaments_tree = player_activity_tree.xpath("/html/body/div[@id='mainLayoutWrapper']"
@@ -302,7 +310,7 @@ def download_matches(date, begin, end):
             matches_tree = tournamentTree.xpath("./table[@class='mega-table']/tbody/tr")
             for matchTree in matches_tree:
                 opponent_tree = matchTree.xpath("./td[3]/div[1]/a")
-                if len(opponent_tree) == 0:
+                if len(opponent_tree) == 0 or opponent_tree[0].attrib['href'] == "#":
                     continue
                 opponent_url = baseUrl + opponent_tree[0].attrib['href']
                 opponent = get_player_by_url(date, opponent_url, players, session)
@@ -334,7 +342,7 @@ def download_matches(date, begin, end):
                     sets.append(new_set)
 
                 if opponent is None:
-                    print("Unknown player: %s (%s)" % (opponent_url, player_name))
+                    print("Unknown player: %s (%s %s)" % (opponent_url, player_name, opponent_tree[0].text.strip()))
 
                 match = {
                     'id': None,
