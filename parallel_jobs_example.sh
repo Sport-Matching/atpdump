@@ -15,6 +15,12 @@ preLaunch()
     sleep $((${RANDOM} % 10))
 }
 
+postLaunch()
+{
+    echo "Processing all data..."
+    sleep $((${RANDOM} % 10))
+}
+
 launchInstance()
 {
     local instanceBegin=${1}

@@ -36,6 +36,10 @@ launch()
     then
         parallelNbItems=${parallelItems}
     fi
+    if [ ${threads} -gt ${itemsCount} ]
+    then
+        threads=${itemsCount}
+    fi
 
     echo "Running pre launch"
     preLaunch
@@ -56,7 +60,7 @@ launch()
         fi
         local threadCount=$((${threadLast} - ${threadFirst} + 1))
         echo "Launching thread ${threadNumber}: from ${threadFirst} to ${threadLast} (${threadCount})"
-        launchThread ${threadFirst} ${threadLast} ${threadCount} ${threadNumber} ${parallelNbItems} > /dev/null &
+        launchThread ${threadFirst} ${threadLast} ${threadCount} ${threadNumber} ${parallelNbItems} &
         local threadPid=$!
         threadNumber=$((${threadNumber} + 1))
         threadsPid[${threadNumber}]=${threadPid}
@@ -99,6 +103,10 @@ launch()
         fi
     done
     echo "All threads done"
+
+
+    echo "Running post launch"
+    postLaunch
 }
 
 launch ${first} ${last} ${threads} "${parallelNbItems}"
