@@ -73,7 +73,7 @@ def insert_set(conn, new_set):
     cur = conn.cursor()
     cur.execute("insert into sets (player1_score, player2_score, player1_tie_break, player2_tie_break)"
                 "VALUES (%s, %s, %s, %s) RETURNING id;",
-                (new_set['player1_score'], new_set['player1_score'], new_set['player1_tie_break'],
+                (new_set['player1_score'], new_set['player2_score'], new_set['player1_tie_break'],
                  new_set['player2_tie_break']))
     entity_id = cur.fetchone()[0]
     cur.close()
