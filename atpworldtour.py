@@ -27,20 +27,14 @@ dbInstance = connect_sql()
 
 def clear_db(conn):
     cur = conn.cursor()
-    cur.execute("DELETE FROM tournaments")
-    cur.execute("DELETE FROM matches")
-    cur.execute("DELETE FROM sets")
-    cur.execute("DELETE FROM rankings")
-    cur.execute("DELETE FROM players")
+    cur.execute("TRUNCATE players, rankings, matches, tournaments, pronostics, sets, ground_types")
     cur.close()
     conn.commit()
 
 
 def clear_matches(conn):
     cur = conn.cursor()
-    cur.execute("DELETE FROM sets")
-    cur.execute("DELETE FROM matches")
-    cur.execute("DELETE FROM tournaments")
+    cur.execute("TRUNCATE matches, tournaments, pronostics, sets, ground_types")
     cur.close()
     conn.commit()
 
@@ -111,6 +105,7 @@ def get_player_by_url(date, player_url, players, session):
     for player_name in players:
         player = players[player_name]
         if player['rootUrl'] == player_url:
+            player['id'] = may_insert_player(dbInstance, player)
             return player
     player = download_player(date, player_url, session)
     if player is not None:
@@ -159,7 +154,7 @@ def download_player(date, player_root_url, session):
 
     e = player_overview_tree.xpath("/html/body/div[@id='mainLayoutWrapper']/div[@id='backbonePlaceholder']"
                                    "/div[@id='mainContainer']/div[@id='mainContent']/div[@id='playerProfileHero']"
-                                   "/div[@class='player-profile-hero-image']/img")
+                                   "/div/img")
     if len(e) > 0:
         player_picture_url = baseUrl + e[0].attrib['src']
     else:
@@ -206,7 +201,8 @@ def download_player(date, player_root_url, session):
         'sex': '0',
         'country': country,
         'weight': weight,
-        'size': size
+        'size': size,
+        'rankings': {}
     }
     player['id'] = may_insert_player(dbInstance, player)
     return player
@@ -227,6 +223,7 @@ def download_players(date, begin, end):
     get_ranking_url = baseUrl + '/en/rankings/singles/?rankDate=%s&countryCode=all&rankRange=%s-%s' %\
                                 (date.strftime("%Y-%m-%d"), str(begin), str(end))
     players = load_players()
+    year_players = {}
 
     session = requests.session()
     time.sleep(1)
@@ -240,12 +237,16 @@ def download_players(date, begin, end):
 
     for playerTreeElement in all_players_tree_elements:
         name_element = playerTreeElement[3][0]
+        ranking_element = playerTreeElement[0]
         player_overview_url = baseUrl + name_element.attrib['href']
-        get_player_by_url(date, player_overview_url, players, session)
-        # if player is not None:
-        #     players[player['name']] = player
+        player = get_player_by_url(date, player_overview_url, players, session)
+        if player is not None:
+            year_players[player["name"]] = player
+            if ranking_element.text is not None:
+                m = re.search("^[0-9]+", ranking_element.text.strip())
+                player['rankings'][date.year] = int(m.group(0))
     with open("out/players-%s-%s-%s.json" % (str(date.year), str(begin), str(end)), "w+") as f:
-        f.write(json.dumps(players))
+        f.write(json.dumps(year_players))
 
 
 def download_matches(date, begin, end):
@@ -254,7 +255,8 @@ def download_matches(date, begin, end):
     matches = []
     session = requests.session()
     players = load_players()
-    with open("out/players-%s-%s-%s.json" % (str(date.year), str(begin), str(end)), "r") as f:
+    with open("out/players-%s/players-%s-%s-%s.json" % (
+            str(date.year), str(date.year), str(begin), str(end)), "r") as f:
         selected_players = json.load(f)
 
     for player_name in selected_players:
@@ -310,7 +312,8 @@ def download_matches(date, begin, end):
             matches_tree = tournamentTree.xpath("./table[@class='mega-table']/tbody/tr")
             for matchTree in matches_tree:
                 opponent_tree = matchTree.xpath("./td[3]/div[1]/a")
-                if len(opponent_tree) == 0 or opponent_tree[0].attrib['href'] == "#":
+                if len(opponent_tree) == 0 or 'href' not in opponent_tree[0].attrib or (
+                            opponent_tree[0].attrib['href'] == "#"):
                     continue
                 opponent_url = baseUrl + opponent_tree[0].attrib['href']
                 opponent = get_player_by_url(date, opponent_url, players, session)
@@ -320,7 +323,10 @@ def download_matches(date, begin, end):
                     continue
 
                 sets = []
-                sets_str = set_tree[0].text.strip().split(" ")
+                sets_str = set_tree[0].text
+                if sets_str is None:
+                    continue
+                sets_str = sets_str.strip().split(" ")
                 for setStr in sets_str:
                     if len(setStr) == 2:
                         new_set = {
@@ -361,7 +367,7 @@ def download_matches(date, begin, end):
                 matches.append(match)
 
 
-def download_years():
+def download_years(date):
     session = requests.session()
     get_ranking_url = baseUrl + '/en/rankings/singles'
     players_html = session.get(get_ranking_url)
@@ -376,24 +382,25 @@ def download_years():
     years = {}
     for e in players_tree_elements:
         date_string = e.text.strip()
-        date = datetime.datetime.strptime(date_string, "%Y.%m.%d")
-        if date.year not in years:
-            years[date.year] = date
+        year = datetime.datetime.strptime(date_string, "%Y.%m.%d")
+        if year.year not in years:
+            years[year.year] = year
 
     with open("out/years.txt", "w+") as f:
         for year in reversed(list(years)):
-            get_ranking_url = baseUrl + '/en/rankings/singles?rankDate=%s&countryCode=all&rankRange=0-10000' %\
-                                        years[year].strftime("%Y-%m-%d")
-            all_players_html = session.get(get_ranking_url)
-            all_players_tree = html.fromstring(all_players_html.text)
-            all_players_tree_elements = all_players_tree.xpath("/html/body/div[@id='mainLayoutWrapper']"
-                                                               "/div[@id='backbonePlaceholder']"
-                                                               "/div[@id='mainContainer']/div[@id='mainContent']"
-                                                               "/div[@id='singlesRanking']"
-                                                               "/div[@id='rankingDetailAjaxContainer']"
-                                                               "/table[@class='mega-table']/tbody/tr")
-            f.write(years[year].strftime("%Y-%m-%d") + " " + str(len(all_players_tree_elements)) + "\n")
-            f.flush()
+            if years[year] >= date:
+                get_ranking_url = baseUrl + '/en/rankings/singles?rankDate=%s&countryCode=all&rankRange=0-10000' %\
+                                            years[year].strftime("%Y-%m-%d")
+                all_players_html = session.get(get_ranking_url)
+                all_players_tree = html.fromstring(all_players_html.text)
+                all_players_tree_elements = all_players_tree.xpath("/html/body/div[@id='mainLayoutWrapper']"
+                                                                   "/div[@id='backbonePlaceholder']"
+                                                                   "/div[@id='mainContainer']/div[@id='mainContent']"
+                                                                   "/div[@id='singlesRanking']"
+                                                                   "/div[@id='rankingDetailAjaxContainer']"
+                                                                   "/table[@class='mega-table']/tbody/tr")
+                f.write(years[year].strftime("%Y-%m-%d") + " " + str(len(all_players_tree_elements)) + "\n")
+                f.flush()
 
 
 def concat_players():
@@ -402,14 +409,22 @@ def concat_players():
         with open(filename, "r") as f:
             data = json.load(f)
             for playerName in data:
-                players[playerName] = data[playerName]
+                new_player = data[playerName]
+                if playerName not in players:
+                    players[playerName] = new_player
+                else:
+                    player = players[playerName]
+                    for year in player['rankings']:
+                        new_player['rankings'][year] = player['rankings'][year]
+                    players[playerName] = new_player
+
     with open("out/players-all.json", "w+") as f:
         f.write(json.dumps(players))
     print("%s players" % str(len(players)))
 
 
 def usage():
-    print('Usage: %s (clearDb|clearMatches|downloadYears|concatPlayers) |'
+    print('Usage: %s (clearDb|clearMatches|concatPlayers) | downloadYears date |'
           '(downloadPlayers|downloadMatches date begin end)' % (sys.argv[0]))
     exit(64)
 
@@ -420,12 +435,14 @@ def main():
         usage()
 
     operation = sys.argv[1]
-    if len(sys.argv) == 5:
+    if len(sys.argv) >= 3:
         date = datetime.datetime.strptime(sys.argv[2], "%Y-%m-%d")
+    else:
+        date = None
+    if len(sys.argv) == 5:
         begin = int(sys.argv[3])
         end = int(sys.argv[4])
     else:
-        date = None
         begin = None
         end = None
 
@@ -454,7 +471,9 @@ def main():
         exit(0)
 
     elif operation == "downloadYears":
-        download_years()
+        if date is None:
+            usage()
+        download_years(date)
         exit(0)
 
     else:
