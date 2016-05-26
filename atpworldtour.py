@@ -14,10 +14,10 @@ baseUrl = 'http://www.atpworldtour.com'
 
 def connect_sql():
     host = "127.0.0.1"
-    port = 5432
+    port = 43001
     db = "sport_matching"
-    user = "dev"
-    password = "dev"
+    user = "postgres"
+    password = "postgres"
     conn_string = "host='" + host + "' port='" + str(port) + "' dbname='" + db + \
                   "' user='" + user + "' password='" + password + "'"
     return psycopg2.connect(conn_string)
