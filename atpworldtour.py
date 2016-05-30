@@ -1,6 +1,7 @@
 #! /usr/bin/env python3
 import json
 import glob
+import string
 import sys
 import re
 import datetime
@@ -14,10 +15,10 @@ baseUrl = 'http://www.atpworldtour.com'
 
 def connect_sql():
     host = "127.0.0.1"
-    port = 43001
+    port = 5432
     db = "sport_matching"
-    user = "postgres"
-    password = "postgres"
+    user = "dev"
+    password = "dev"
     conn_string = "host='" + host + "' port='" + str(port) + "' dbname='" + db + \
                   "' user='" + user + "' password='" + password + "'"
     return psycopg2.connect(conn_string)
@@ -323,7 +324,7 @@ def download_matches(date, begin, end):
                     continue
 
                 sets = []
-                sets_str = set_tree[0].text
+                sets_str = ' '.join(set_tree[0].xpath("text()"))
                 if sets_str is None:
                     continue
                 sets_str = sets_str.strip().split(" ")
