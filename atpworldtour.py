@@ -1,7 +1,6 @@
 #! /usr/bin/env python3
 import json
 import glob
-import string
 import sys
 import re
 import datetime
@@ -68,6 +67,14 @@ def may_insert_player(conn, player):
     cur.close()
     conn.commit()
     return entity_id
+
+
+def insert_player_ranking(conn, ranking):
+    cur = conn.cursor()
+    cur.execute("insert into rankings (player_id, rank, year) VALUES (%s, %s, %s)",
+                (ranking['player_id'], ranking['rank'], ranking['year']))
+    cur.close()
+    conn.commit()
 
 
 def insert_set(conn, new_set):
@@ -424,6 +431,18 @@ def concat_players():
     print("%s players" % str(len(players)))
 
 
+def insert_rankings():
+    players = load_players()
+    for player_name in players:
+        player = players[player_name]
+        for year in player['rankings']:
+            insert_player_ranking(dbInstance, {
+                "player_id": player['id'],
+                "rank": player['rankings'][year],
+                "year": year
+            })
+
+
 def usage():
     print('Usage: %s (clearDb|clearMatches|concatPlayers) | downloadYears date |'
           '(downloadPlayers|downloadMatches date begin end)' % (sys.argv[0]))
@@ -475,6 +494,10 @@ def main():
         if date is None:
             usage()
         download_years(date)
+        exit(0)
+
+    elif operation == "insertRankings":
+        insert_rankings()
         exit(0)
 
     else:

@@ -31,14 +31,16 @@ launch()
     local threads=$3
     local parallelNbItems=$4
     local itemsCount=$((${last} - ${first} + 1))
+
+    if [ ${threads} -gt ${itemsCount} ]
+    then
+        threads=${itemsCount}
+    fi
+
     local parallelItems=$(( $((${itemsCount} + $((${itemsCount} % ${threads})))) / ${threads}))
     if [ "${parallelNbItems}" == "" ] || [ ${parallelNbItems} -gt ${parallelItems} ]
     then
         parallelNbItems=${parallelItems}
-    fi
-    if [ ${threads} -gt ${itemsCount} ]
-    then
-        threads=${itemsCount}
     fi
 
     echo "Running pre launch"
@@ -62,8 +64,8 @@ launch()
         echo "Launching thread ${threadNumber}: from ${threadFirst} to ${threadLast} (${threadCount})"
         launchThread ${threadFirst} ${threadLast} ${threadCount} ${threadNumber} ${parallelNbItems} &
         local threadPid=$!
-        threadNumber=$((${threadNumber} + 1))
         threadsPid[${threadNumber}]=${threadPid}
+        threadNumber=$((${threadNumber} + 1))
     done
 
     local stillRunningCount=${#threadsPid[@]}

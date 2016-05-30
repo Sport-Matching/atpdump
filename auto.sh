@@ -2,7 +2,7 @@
 
 rm -rf out/*
 
-./atpworldtour.py downloadYears 2012-01-01 || exit 1
+./atpworldtour.py downloadYears 2015-01-01 || exit 1
 
 ./atpworldtour.py clearDb || exit 2
 
@@ -23,3 +23,5 @@ do
     count=$(echo "${line}" | cut -d' ' -f2)
     ./download.sh downloadMatches ${date} ${count}
 done < ./out/years.txt
+
+./atpworldtour.py insertRankings
