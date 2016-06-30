@@ -335,6 +335,7 @@ def download_matches(date, begin, end):
                 if sets_str is None:
                     continue
                 sets_str = sets_str.strip().split(" ")
+                sets_str = list(filter(None, sets_str))
                 for setStr in sets_str:
                     if len(setStr) == 2:
                         new_set = {
