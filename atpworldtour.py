@@ -359,6 +359,9 @@ def download_matches(date, begin, end):
                 if opponent is None:
                     print("Unknown player: %s (%s %s)" % (opponent_url, player_name, opponent_tree[0].text.strip()))
 
+                if len(sets) == 0:
+                    continue
+
                 match = {
                     'id': None,
                     'player1_id': player['id'],
